@@ -1,0 +1,360 @@
+"use client";
+
+import Link from "next/link";
+import { api } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
+import type { ImportReportResponse } from "@/server/import-report";
+import {
+  Alert,
+  Card,
+  EmptyState,
+  ErrorNote,
+  Loading,
+  PageHeader,
+  Panel,
+  Stat,
+  TableWrap,
+  cn,
+  linkClass,
+  rowClass,
+  thClass,
+  thRightClass,
+} from "@/components/ui";
+
+const sections = [
+  "gaps",
+  "expired",
+  "noExpiry",
+  "stoppedRecording",
+  "lateOpenings",
+  "mismatches",
+] as const;
+
+type SectionKey = (typeof sections)[number];
+
+const HEADINGS: { key: SectionKey; title: string; blurb: string; tone: "warn" | "danger" | "plain" }[] = [
+  {
+    key: "mismatches",
+    title: "Month totals that do not add up",
+    blurb: "A month-end total the app cannot rebuild from the entries. Each one needs a person to check it.",
+    tone: "danger",
+  },
+  {
+    key: "gaps",
+    title: "Month openings that did not match the previous close",
+    blurb: "Each of these became a Correction entry, so the numbers add up. Open the item to see it in the history, and correct it there if the sheet was wrong.",
+    tone: "warn",
+  },
+  {
+    key: "expired",
+    title: "Stock on hand past its expiry",
+    blurb: "Brought in as it was found, flagged rather than hidden. Record it as “Thrown away” from the Expiry dates screen once it is cleared from the shelf.",
+    tone: "danger",
+  },
+  {
+    key: "noExpiry",
+    title: "Stock on hand with no expiry recorded",
+    blurb: "The old spreadsheet never had an expiry for these. Recording stock now asks for one, so this list should only get shorter.",
+    tone: "warn",
+  },
+  {
+    key: "stoppedRecording",
+    title: "Items the office stopped recording",
+    blurb: "Their rows stop before the newest month, so the balance is frozen at whatever it was. Confirm whether the item is still in use.",
+    tone: "plain",
+  },
+  {
+    key: "lateOpenings",
+    title: "Items that joined the sheet later, already holding stock",
+    blurb: "Added to the sheet after the first day, with stock already on the shelf, so the opening is dated to the day they appeared.",
+    tone: "plain",
+  },
+];
+
+function countOf(report: ImportReportResponse, key: SectionKey): number {
+  if (key === "mismatches") return report.reconciliation?.mismatches.length ?? 0;
+  if (key === "gaps") return report.gaps.length;
+  if (key === "expired") return report.expired.length;
+  if (key === "noExpiry") return report.noExpiry.length;
+  if (key === "stoppedRecording") return report.stoppedRecording.length;
+  return report.lateOpenings.length;
+}
+
+function ItemLink({ id }: { id: string }) {
+  return (
+    <Link href={`/items/${encodeURIComponent(id)}`} className={linkClass}>
+      {id}
+    </Link>
+  );
+}
+
+export default function ImportPage() {
+  const { data, error, loading } = useApi(() => api.importReport(), []);
+
+  if (loading) return <Loading />;
+  if (error) return <ErrorNote error={new Error(error)} />;
+  if (!data) return null;
+
+  if (!data.imported || !data.summary || !data.reconciliation) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          title="Old spreadsheet"
+          description="What came in from the old spreadsheet, and what still needs a decision."
+        />
+        <EmptyState
+          title="The old spreadsheet has not been brought in yet."
+          hint={
+            <>
+              Run <code className="font-mono">npm run import:workbook -- --report</code> to see what would happen, then{" "}
+              <code className="font-mono">-- --apply</code> to load it. This screen then shows the report.
+            </>
+          }
+        />
+      </div>
+    );
+  }
+
+  const { summary, reconciliation } = data;
+  const matched = reconciliation.monthEndsChecked - reconciliation.mismatches.length;
+  const units = (n: number) => `${n.toLocaleString()} ${n === 1 ? "unit" : "units"}`;
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Old spreadsheet"
+        description="What came in from the old spreadsheet, and what still needs a decision. Nothing here changes on its own; the entries are already in the app."
+      />
+
+      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Stat label="Month totals" value={`${matched}/${reconciliation.monthEndsChecked}`} tone={reconciliation.mismatches.length ? "danger" : "ok"} />
+        <Stat label="Entries" value={Object.values(summary.counts).reduce((s, n) => s + n, 0).toLocaleString()} />
+        <Stat label="Units on hand" value={summary.unitsOnHand.toLocaleString()} />
+        <Stat label="Needs attention" value={sections.reduce<number>((s, k) => s + countOf(data, k), 0)} tone="warn" />
+      </dl>
+
+      <Card className="p-4 text-sm">
+        <p>
+          Loaded from <span className="font-mono text-xs">{data.workbook ?? "the old spreadsheet"}</span>
+          {data.importedBy ? ` by ${data.importedBy}` : ""}
+          {data.appliedAt ? ` on ${data.appliedAt.slice(0, 10)}` : ""}.
+        </p>
+        <p className="mt-1 text-muted">
+          {summary.months} months, {summary.firstDate} to {summary.lastDate}, for {summary.items} items.
+          Received {units(summary.receivedUnits)} and gave out {units(summary.dispensedUnits)}, matching the old
+          spreadsheet&apos;s own totals.
+        </p>
+        {data.rejectedGaps.length ? (
+          <p className="mt-1 text-warn">
+            {data.rejectedGaps.length} gap(s) were left alone on purpose: {data.rejectedGaps.join(", ")}.
+          </p>
+        ) : null}
+      </Card>
+
+      {HEADINGS.map(({ key, title, blurb, tone }) => {
+        const count = countOf(data, key);
+        return (
+          <Panel
+            key={key}
+            title={title}
+            description={blurb}
+            actions={
+              <span
+                className={cn(
+                  "rounded-full px-2.5 py-0.5 text-sm font-medium",
+                  count === 0
+                    ? "bg-ok-soft text-ok"
+                    : tone === "danger"
+                      ? "bg-danger-soft text-danger"
+                      : tone === "warn"
+                        ? "bg-warn-soft text-warn"
+                        : "bg-surface-2 text-muted",
+                )}
+              >
+                {count === 0 ? "Nothing to do" : count}
+              </span>
+            }
+          >
+            {count === 0 ? null : key === "mismatches" ? (
+              <MismatchTable rows={reconciliation.mismatches} />
+            ) : key === "gaps" ? (
+              <GapTable rows={data.gaps} />
+            ) : key === "expired" || key === "noExpiry" ? (
+              <BatchTable rows={key === "expired" ? data.expired : data.noExpiry} showExpiry={key === "expired"} />
+            ) : key === "stoppedRecording" ? (
+              <StoppedTable rows={data.stoppedRecording} />
+            ) : (
+              <LateOpeningTable rows={data.lateOpenings} />
+            )}
+          </Panel>
+        );
+      })}
+
+      <Panel title={`Months found (${data.months.length})`} description="One worksheet tab per month in the old spreadsheet.">
+        <TableWrap>
+          <thead>
+            <tr>
+              <th scope="col" className={thClass}>Tab</th>
+              <th scope="col" className={thRightClass}>Rows</th>
+              <th scope="col" className={thClass}>Covers</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.months.map((m) => (
+              <tr key={m.month} className={rowClass}>
+                <td className="px-3 py-2 text-xs">{m.sheet}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs">{m.rows.toLocaleString()}</td>
+                <td className="px-3 py-2 font-mono text-xs text-muted">
+                  {m.firstDate} to {m.lastDate}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
+      </Panel>
+
+      {data.sources.length ? (
+        <Alert tone="info">
+          Deliveries came from {[...new Set(data.sources.map((s) => s.source))].join(", ")} across{" "}
+          {data.sources.length} months.
+        </Alert>
+      ) : null}
+
+      {data.unmatchedWideRows.length ? (
+        <Alert tone="warn">
+          {data.unmatchedWideRows.length} row(s) in the wide sheet matched no item, so nothing was brought in from
+          them: {data.unmatchedWideRows.map((u) => `${u.sheet} row ${u.row} "${u.name}"`).join(", ")}.
+        </Alert>
+      ) : null}
+    </div>
+  );
+}
+
+function MismatchTable({ rows }: { rows: { month: string; itemId: string; expected: number; rebuilt: number }[] }) {
+  return (
+    <TableWrap className="border-danger/40">
+      <thead>
+        <tr>
+          <th scope="col" className={thClass}>Month</th>
+          <th scope="col" className={thClass}>Item</th>
+          <th scope="col" className={thRightClass}>Old sheet</th>
+          <th scope="col" className={thRightClass}>Rebuilt</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={`${r.month}-${r.itemId}`} className={rowClass}>
+            <td className="px-3 py-2 font-mono text-xs">{r.month}</td>
+            <td className="px-3 py-2"><ItemLink id={r.itemId} /></td>
+            <td className="px-3 py-2 text-right font-mono text-xs">{r.expected}</td>
+            <td className="px-3 py-2 text-right font-mono text-xs font-medium text-danger">{r.rebuilt}</td>
+          </tr>
+        ))}
+      </tbody>
+    </TableWrap>
+  );
+}
+
+function GapTable({ rows }: { rows: ImportReportResponse["gaps"] }) {
+  return (
+    <TableWrap>
+      <thead>
+        <tr>
+          <th scope="col" className={thClass}>Item</th>
+          <th scope="col" className={thClass}>Date</th>
+          <th scope="col" className={thRightClass}>Before</th>
+          <th scope="col" className={thRightClass}>After</th>
+          <th scope="col" className={thRightClass}>Correction</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((g) => (
+          <tr key={`${g.itemId}-${g.date}`} className={rowClass}>
+            <td className="px-3 py-2"><ItemLink id={g.itemId} /></td>
+            <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{g.date}</td>
+            <td className="px-3 py-2 text-right font-mono text-xs text-muted">{g.from}</td>
+            <td className="px-3 py-2 text-right font-mono text-xs">{g.to}</td>
+            <td className="px-3 py-2 text-right font-mono text-xs font-medium text-warn">
+              {g.difference > 0 ? `+${g.difference}` : g.difference}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </TableWrap>
+  );
+}
+
+function BatchTable({ rows, showExpiry }: { rows: ImportReportResponse["expired"]; showExpiry: boolean }) {
+  const total = rows.reduce((s, r) => s + r.balance, 0);
+  return (
+    <>
+      <p className="mb-2 text-sm text-muted">
+        {total.toLocaleString()} units across {rows.length} batches.
+      </p>
+      <TableWrap>
+        <thead>
+          <tr>
+            <th scope="col" className={thClass}>Item</th>
+            {showExpiry ? <th scope="col" className={thClass}>Expiry</th> : null}
+            <th scope="col" className={thRightClass}>Units</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.itemId}-${r.expiry ?? "none"}`} className={rowClass}>
+              <td className="px-3 py-2"><ItemLink id={r.itemId} /></td>
+              {showExpiry ? <td className="px-3 py-2 font-mono text-xs">{r.expiry}</td> : null}
+              <td className="px-3 py-2 text-right font-mono text-xs">{r.balance}</td>
+            </tr>
+          ))}
+        </tbody>
+      </TableWrap>
+    </>
+  );
+}
+
+function StoppedTable({ rows }: { rows: ImportReportResponse["stoppedRecording"] }) {
+  return (
+    <TableWrap>
+      <thead>
+        <tr>
+          <th scope="col" className={thClass}>Item</th>
+          <th scope="col" className={thClass}>Last recorded</th>
+          <th scope="col" className={thRightClass}>Frozen balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.itemId} className={rowClass}>
+            <td className="px-3 py-2"><ItemLink id={r.itemId} /></td>
+            <td className="px-3 py-2 font-mono text-xs">{r.lastDate}</td>
+            <td className="px-3 py-2 text-right font-mono text-xs">{r.balance}</td>
+          </tr>
+        ))}
+      </tbody>
+    </TableWrap>
+  );
+}
+
+function LateOpeningTable({ rows }: { rows: ImportReportResponse["lateOpenings"] }) {
+  return (
+    <TableWrap>
+      <thead>
+        <tr>
+          <th scope="col" className={thClass}>Item</th>
+          <th scope="col" className={thClass}>First seen</th>
+          <th scope="col" className={thRightClass}>Units</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.itemId} className={rowClass}>
+            <td className="px-3 py-2"><ItemLink id={r.itemId} /></td>
+            <td className="px-3 py-2 font-mono text-xs">{r.date}</td>
+            <td className="px-3 py-2 text-right font-mono text-xs">{r.qty}</td>
+          </tr>
+        ))}
+      </tbody>
+    </TableWrap>
+  );
+}

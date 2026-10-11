@@ -1,0 +1,240 @@
+@import "tailwindcss";
+
+/* Colors are tokens. Mode is [data-theme="light"|"dark"] and the color theme is [data-color="…"],
+   both set on <html> by the theme script before the first paint. Teal is the default, so it only
+   needs the base tokens. Status colors (warn/danger/ok) are the same in every theme: they mean
+   something, so they do not dress up.
+   Elevation is a token too: --shadow-card, --shadow-raised and --shadow-float are the only three
+   shadows in the app, so everything sits at the same depth as everything else. */
+:root {
+  /* Teal, light. */
+  --bg: #f2f5f4;
+  --surface: #ffffff;
+  --surface-2: #f7faf9;
+  --fg: #14232b;
+  --muted: #53666e;
+  --rule: #dbe5e2;
+  --accent: #0b6b63;
+  --accent-rgb: 11 107 99;
+  --accent-fg: #ffffff;
+  --accent-soft: #ddf0ed;
+
+  --warn: #8a5200;
+  --warn-soft: #fcefd6;
+  --danger: #a3262a;
+  --danger-soft: #fce4e4;
+  --ok: #1c6b39;
+  --ok-soft: #e0f1e5;
+
+  /* Soft and wide rather than dark and tight: this is a calm screen, not a game. The extra first
+     line is a hairline of the theme color along the top edge, which is what makes a box read as
+     slightly glassy. */
+  --shadow-card: inset 0 1px 0 rgb(var(--accent-rgb) / 0.1), 0 1px 2px rgb(20 35 43 / 0.05), 0 1px 3px rgb(20 35 43 / 0.06);
+  --shadow-raised: inset 0 1px 0 rgb(var(--accent-rgb) / 0.12), 0 2px 4px rgb(20 35 43 / 0.05), 0 6px 14px -4px rgb(20 35 43 / 0.1);
+  --shadow-float: inset 0 1px 0 rgb(var(--accent-rgb) / 0.14), 0 4px 8px rgb(20 35 43 / 0.06), 0 18px 40px -8px rgb(20 35 43 / 0.18);
+  --ring: 0 0 0 3px rgb(var(--accent-rgb) / 0.22);
+  /* The faint wash of theme color at the top of every panel and control. */
+  --surface-sheen: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.06), rgb(var(--accent-rgb) / 0) 48%);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* Teal, dark. Carries the shared dark status colors and shadows too. */
+:root[data-theme="dark"] {
+  --bg: #0e191d;
+  --surface: #17262b;
+  --surface-2: #1c2d32;
+  --fg: #e4eeec;
+  --muted: #9bb0b0;
+  --rule: #2b3f45;
+  --accent: #5fcfc2;
+  --accent-rgb: 95 207 194;
+  --accent-fg: #06201d;
+  --accent-soft: #16383c;
+
+  --warn: #f0b955;
+  --warn-soft: #372e15;
+  --danger: #ff8a8a;
+  --danger-soft: #3b1d1f;
+  --ok: #7fd49a;
+  --ok-soft: #16331f;
+
+  /* A shadow alone barely reads on a dark surface, so each one carries a hairline of light. */
+  --shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 1px 0 rgb(255 255 255 / 0.03), 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-raised: inset 0 1px 0 rgb(255 255 255 / 0.07), 0 1px 0 rgb(255 255 255 / 0.04), 0 4px 12px rgb(0 0 0 / 0.45);
+  --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 2px 0 rgb(255 255 255 / 0.05), 0 20px 44px rgb(0 0 0 / 0.6);
+  --surface-sheen: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.1), rgb(var(--accent-rgb) / 0) 52%);
+
+  color-scheme: dark;
+}
+
+/* ---------- color themes ---------- */
+/* Each theme only restates the color tokens; shadows and status colors come from the mode. */
+
+:root[data-color="ocean"] {
+  --bg: #eef3f9;
+  --surface: #ffffff;
+  --surface-2: #f4f8fc;
+  --rule: #d5e0ec;
+  --accent: #1d5fa8;
+  --accent-rgb: 29 95 168;
+  --accent-fg: #ffffff;
+  --accent-soft: #dbe8f6;
+}
+:root[data-color="ocean"][data-theme="dark"] {
+  --bg: #0d151f;
+  --surface: #152232;
+  --surface-2: #1a2a3c;
+  --rule: #2a3b4e;
+  --accent: #6db3f2;
+  --accent-rgb: 109 179 242;
+  --accent-fg: #061726;
+  --accent-soft: #16304a;
+}
+
+:root[data-color="violet"] {
+  --bg: #f4f1f9;
+  --surface: #ffffff;
+  --surface-2: #f8f6fc;
+  --rule: #e2dced;
+  --accent: #6a3fb8;
+  --accent-rgb: 106 63 184;
+  --accent-fg: #ffffff;
+  --accent-soft: #e7def7;
+}
+:root[data-color="violet"][data-theme="dark"] {
+  --bg: #15111f;
+  --surface: #211a30;
+  --surface-2: #291f3b;
+  --rule: #342a45;
+  --accent: #b79aef;
+  --accent-rgb: 183 154 239;
+  --accent-fg: #1a1030;
+  --accent-soft: #2f2447;
+}
+
+:root[data-color="rose"] {
+  --bg: #f9f0f2;
+  --surface: #ffffff;
+  --surface-2: #fcf6f7;
+  --rule: #ecd7dc;
+  --accent: #b03a55;
+  --accent-rgb: 176 58 85;
+  --accent-fg: #ffffff;
+  --accent-soft: #f7dde3;
+}
+:root[data-color="rose"][data-theme="dark"] {
+  --bg: #1e1116;
+  --surface: #2c1a20;
+  --surface-2: #38212a;
+  --rule: #45272f;
+  --accent: #f092ab;
+  --accent-rgb: 240 146 171;
+  --accent-fg: #2a0d16;
+  --accent-soft: #43202c;
+}
+
+:root[data-color="slate"] {
+  --bg: #f0f1f3;
+  --surface: #ffffff;
+  --surface-2: #f6f7f8;
+  --rule: #dce0e6;
+  --accent: #3d4a5c;
+  --accent-rgb: 61 74 92;
+  --accent-fg: #ffffff;
+  --accent-soft: #dfe3e9;
+}
+:root[data-color="slate"][data-theme="dark"] {
+  --bg: #12151a;
+  --surface: #1b2028;
+  --surface-2: #232a34;
+  --rule: #2e343d;
+  --accent: #aebccd;
+  --accent-rgb: 174 188 205;
+  --accent-fg: #10141a;
+  --accent-soft: #2a323d;
+}
+
+/* Expose the tokens to Tailwind utilities (bg-surface, text-muted, border-rule, shadow-raised...). */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-rule: var(--rule);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+  --shadow-float: var(--shadow-float);
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+body {
+  /* A very soft wash of the theme color, so cards have something to sit on. Two corners rather than
+     one, so the background has a direction instead of a flat tint. */
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(120rem 60rem at 50% -20rem, rgb(var(--accent-rgb) / 0.08), transparent 60rem),
+    radial-gradient(70rem 40rem at 100% 100%, rgb(var(--accent-rgb) / 0.05), transparent 55rem);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Every panel, control and table gets a faint wash of the theme color fading down from the top, and
+   the shadows carry a matching hairline along the top edge. Together they read as a little glassy
+   without hiding whatever sits underneath. */
+.bg-surface {
+  background-image: var(--surface-sheen);
+}
+
+/* The uploaded logo is a single-colour mark on a white background. It is drawn as a mask, so the
+   shape comes from the image and the colour comes from the theme token: the logo follows every
+   colour theme and both modes, and the white background disappears. */
+.brand-mark {
+  display: block;
+  background-color: var(--accent);
+  -webkit-mask: url("/logo-mark.png") center / contain no-repeat;
+  mask: url("/logo-mark.png") center / contain no-repeat;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Anything that lifts should come back down, so the motion never leaves a button hovering. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* A table's header sticks under the page header, which is what makes a long list usable. */
+.sticky-head thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
