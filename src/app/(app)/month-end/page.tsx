@@ -6,6 +6,7 @@ import type { CountRow, MonthEndResponse } from "@/lib/api-types";
 import { monthOf, previousMonth } from "@/lib/dates";
 import { usePermissions } from "@/components/SessionProvider";
 import { DownloadButton } from "@/components/DownloadButton";
+import { Pagination, usePaging } from "@/components/Pagination";
 import {
   Alert,
   Button,
@@ -142,10 +143,13 @@ export default function MonthEndPage() {
 
   const options = monthOptions(current);
 
+  // A different month restarts the count sheet at the first page.
+  const countPage = usePaging(sheet?.counts ?? [], 10, month);
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Month closing"
+        title="Month report"
         description="Count the shelf, save the counts, then close the month so its numbers cannot change. You can reopen it later if a mistake turns up."
       />
 
@@ -167,6 +171,26 @@ export default function MonthEndPage() {
         <div className="ml-auto">
           <DownloadButton url={downloadUrls.ledger({ month })} fallbackName={`ledger-${month}.xlsx`} size="md">
             Download the month as Excel
+          </DownloadButton>
+        </div>
+      </Card>
+
+      <Card className="flex flex-wrap items-center gap-4 p-4">
+        <div className="max-w-lg">
+          <p className="font-medium">The whole workbook</p>
+          <p className="text-sm text-muted">
+            Every month that has an entry in one file, laid out the way the office&apos;s archive is. It is the same
+            sheet as the month download, just covering the whole history — like NURSE.xlsx.
+          </p>
+        </div>
+        <div className="ml-auto">
+          <DownloadButton
+            url={downloadUrls.ledger({ all: true })}
+            fallbackName="medisakto-ledger-all-months.xlsx"
+            variant="primary"
+            size="md"
+          >
+            Download all months as Excel
           </DownloadButton>
         </div>
       </Card>
@@ -213,34 +237,50 @@ export default function MonthEndPage() {
                 hint="Every item in the catalogue is inactive or hidden, so there is nothing to count."
               />
             ) : (
-              <TableWrap>
-                <thead>
-                  <tr>
-                    <th scope="col" className={thClass}>Item</th>
-                    <th scope="col" className={thRightClass}>System says</th>
-                    <th scope="col" className={thRightClass}>You counted</th>
-                    <th scope="col" className={thRightClass}>Difference</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sheet.counts.map((row) => (
-                    <CountRowView
-                      key={row.itemId}
-                      row={row}
-                      value={counts[row.itemId] ?? ""}
-                      disabled={closed || busy}
-                      onChange={(v) => setCounts((c) => ({ ...c, [row.itemId]: v }))}
-                    />
-                  ))}
-                </tbody>
-              </TableWrap>
+              <>
+                <TableWrap>
+                  <thead>
+                    <tr>
+                      <th scope="col" className={thClass}>Item</th>
+                      <th scope="col" className={thClass}>Unit</th>
+                      <th scope="col" className={thClass}>Category</th>
+                      <th scope="col" className={thRightClass}>Beginning</th>
+                      <th scope="col" className={thRightClass}>Received</th>
+                      <th scope="col" className={thRightClass}>Dispensed</th>
+                      <th scope="col" className={thRightClass}>Disposed</th>
+                      <th scope="col" className={thRightClass}>Adjusted</th>
+                      <th scope="col" className={thRightClass}>System says</th>
+                      <th scope="col" className={thRightClass}>You counted</th>
+                      <th scope="col" className={thRightClass}>Difference</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {countPage.rows.map((row) => (
+                      <CountRowView
+                        key={row.itemId}
+                        row={row}
+                        value={counts[row.itemId] ?? ""}
+                        disabled={closed || busy}
+                        onChange={(v) => setCounts((c) => ({ ...c, [row.itemId]: v }))}
+                      />
+                    ))}
+                  </tbody>
+                </TableWrap>
+                <Pagination
+                  total={sheet.counts.length}
+                  page={countPage.page}
+                  pageSize={countPage.pageSize}
+                  onPage={countPage.setPage}
+                />
+              </>
             )}
           </Panel>
 
           <Panel title="The month as a spreadsheet" description="What the office keeps on file.">
             <p className="text-sm text-muted">
-              The download puts one row per item per day, with BEGINNING, RECEIVED, DISPENSED and ENDING columns. It is
-              built from your entries rather than typed, so the sheet and the app always match.
+              The download is the office&apos;s original sheet: one row per item, its expiry, and a STARTING BALANCE
+              and DISPENSED column for every day of the month. It is built from your entries rather than typed, so the
+              sheet and the app always match.
             </p>
           </Panel>
 
@@ -332,6 +372,13 @@ function CountRowView({
         {row.variant ? <span className="text-muted"> · {row.variant}</span> : null}
         <span className="ml-2 font-mono text-xs text-muted">{row.itemId}</span>
       </td>
+      <td className="px-3 py-1.5 text-left text-sm text-muted">{row.unit || "—"}</td>
+      <td className="px-3 py-1.5 text-left text-sm">{row.category}</td>
+      <td className="px-3 py-1.5 text-right font-mono text-muted">{row.beginning ?? 0}</td>
+      <td className="px-3 py-1.5 text-right font-mono text-muted">{row.received ?? 0}</td>
+      <td className="px-3 py-1.5 text-right font-mono text-muted">{row.dispensed ?? 0}</td>
+      <td className="px-3 py-1.5 text-right font-mono text-muted">{row.disposed ?? 0}</td>
+      <td className="px-3 py-1.5 text-right font-mono text-muted">{row.adjusted ?? 0}</td>
       <td className="px-3 py-1.5 text-right font-mono text-muted">{row.system}</td>
       <td className="px-3 py-1.5 text-right">
         <Input

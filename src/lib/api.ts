@@ -39,6 +39,7 @@ import {
   months as offlineMonths,
   notifyOutboxChanged,
   scheduleSync,
+  syncNow,
   stockReport,
   suggestAllocation,
   ensureReady,
@@ -102,8 +103,8 @@ function requireOnline(feature: string): void {
 
 /** URLs of the routes that answer with a file rather than JSON. */
 export const downloadUrls = {
-  /** The long-format tab. A month is what the office exports; from/to takes a wider range. */
-  ledger: (q?: { month?: string; from?: string; to?: string; activeOnly?: boolean }) =>
+  /** The office's wide "…s" tabs. A month is the day-to-day export; `all` is the whole recorded history. */
+  ledger: (q?: { month?: string; from?: string; to?: string; all?: boolean; activeOnly?: boolean }) =>
     `/api/export/ledger${qs(q)}`,
   stock: (q?: Query) => `/api/export/stock${qs(q)}`,
 };
@@ -224,6 +225,19 @@ export const api = {
     });
     scheduleSync();
     return result;
+  },
+  /** Deletes an item and all its history. Admin only. */
+  deleteItem: async (id: string): Promise<void> => {
+    requireOnline("Deleting an item");
+    await request(`/api/items/${encodeURIComponent(id)}`, { method: "DELETE" });
+    // Pull the fresh snapshot now so this device's mirror (and therefore the item list) drops
+    // the item before the screen that triggered the delete moves on. Mirrors on other devices
+    // pick the deletion up the next time they sync.
+    try {
+      await syncNow();
+    } catch {
+      // The delete is done server-side either way; a failed pull only delays the local tidying.
+    }
   },
 
   transactions: (q?: Query): Promise<{ transactions: TransactionView[]; total: number }> =>

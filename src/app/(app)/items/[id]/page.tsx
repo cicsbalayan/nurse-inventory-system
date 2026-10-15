@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { CATEGORIES, type Category, type ItemPatchBody } from "@/lib/api-types";
 import { useApi } from "@/lib/use-api";
 import { usePermissions } from "@/components/SessionProvider";
 import { TxTable } from "@/components/TxTable";
+import { Pagination, usePaging } from "@/components/Pagination";
 import { BalanceLineChart, UsageTrendChart } from "@/components/Charts";
 import {
   Alert,
@@ -38,6 +39,9 @@ export default function ItemDetailPage() {
   const { isAdmin } = usePermissions();
   const { data, error, loading, reload } = useApi(() => api.item(id), [id]);
   const [editing, setEditing] = useState(false);
+
+  // The batch list can grow long, so it is Paginated like every other table.
+  const batchPage = usePaging(data?.batches ?? [], 10, id);
 
   if (loading) return <Loading />;
   if (error) return <ErrorNote error={new Error(error)} />;
@@ -112,36 +116,39 @@ export default function ItemDetailPage() {
             action={<Link href="/receive">Receive stock</Link>}
           />
         ) : (
-          <TableWrap>
-            <thead>
-              <tr>
-                <th scope="col" className={thClass}>Batch</th>
-                <th scope="col" className={thClass}>Expiry</th>
-                <th scope="col" className={thClass}>Status</th>
-                <th scope="col" className={thClass}>Received on</th>
-                <th scope="col" className={thRightClass}>In</th>
-                <th scope="col" className={thRightClass}>Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {batches.map((b) => (
-                <tr key={b.id} className={rowClass}>
-                  <td className="px-3 py-2.5 font-mono text-xs">
-                    #{b.id}
-                    {b.label ? <span className="ml-1 text-muted">{b.label}</span> : null}
-                    {b.source ? <span className="ml-1 text-muted">· {b.source}</span> : null}
-                  </td>
-                  <td className="px-3 py-2.5 font-mono text-xs">{b.expiry ?? "unknown"}</td>
-                  <td className="px-3 py-2.5"><ExpiryBadge status={b.expiryStatus} /></td>
-                  <td className="px-3 py-2.5 font-mono text-xs text-muted">{b.receivedOn ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-muted">{b.qtyReceived}</td>
-                  <td className={cn("px-3 py-2.5 text-right font-mono font-medium", b.balance === 0 && "text-muted")}>
-                    {b.balance}
-                  </td>
+          <>
+            <TableWrap>
+              <thead>
+                <tr>
+                  <th scope="col" className={thClass}>Batch</th>
+                  <th scope="col" className={thClass}>Expiry</th>
+                  <th scope="col" className={thClass}>Status</th>
+                  <th scope="col" className={thClass}>Received on</th>
+                  <th scope="col" className={thRightClass}>In</th>
+                  <th scope="col" className={thRightClass}>Balance</th>
                 </tr>
-              ))}
-            </tbody>
-          </TableWrap>
+              </thead>
+              <tbody>
+                {batchPage.rows.map((b) => (
+                  <tr key={b.id} className={rowClass}>
+                    <td className="px-3 py-2.5 font-mono text-xs">
+                      #{b.id}
+                      {b.label ? <span className="ml-1 text-muted">{b.label}</span> : null}
+                      {b.source ? <span className="ml-1 text-muted">· {b.source}</span> : null}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-xs">{b.expiry ?? "unknown"}</td>
+                    <td className="px-3 py-2.5"><ExpiryBadge status={b.expiryStatus} /></td>
+                    <td className="px-3 py-2.5 font-mono text-xs text-muted">{b.receivedOn ?? "—"}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-muted">{b.qtyReceived}</td>
+                    <td className={cn("px-3 py-2.5 text-right font-mono font-medium", b.balance === 0 && "text-muted")}>
+                      {b.balance}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </TableWrap>
+            <Pagination total={batches.length} page={batchPage.page} pageSize={batchPage.pageSize} onPage={batchPage.setPage} />
+          </>
         )}
       </Panel>
 
@@ -195,6 +202,7 @@ function EditItemPanel({
   };
   onSaved: () => void;
 }) {
+  const router = useRouter();
   const [form, setForm] = useState<{
     name: string;
     variant: string;
@@ -213,6 +221,21 @@ function EditItemPanel({
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDelete = async () => {
+    setDeleting(true);
+    setError(undefined);
+    try {
+      await api.deleteItem(itemId);
+      router.replace("/items");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete the item.");
+      setDeleting(false);
+      setConfirming(false);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -302,6 +325,31 @@ function EditItemPanel({
             {busy ? "Saving…" : "Save changes"}
           </Button>
           <span className="text-xs text-muted">Saved straight to the Activity history.</span>
+        </div>
+
+        <div className="mt-2 border-t border-rule pt-4">
+          <p className="text-sm font-medium text-danger">Delete this item</p>
+          <p className="mt-0.5 text-xs text-muted">
+            Removes {current.name} and every batch and entry recorded against it. This cannot be undone;
+            the deletion is the only trace left behind. Deactivating instead keeps the history.
+          </p>
+          {confirming ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <p className="w-full text-sm font-medium text-danger">
+                Really delete {itemId} permanently?
+              </p>
+              <Button variant="danger" size="md" onClick={() => void confirmDelete()} disabled={deleting}>
+                {deleting ? "Deleting…" : "Yes, delete it"}
+              </Button>
+              <Button type="button" variant="plain" size="md" onClick={() => setConfirming(false)} disabled={deleting}>
+                Keep it
+              </Button>
+            </div>
+          ) : (
+            <Button type="button" variant="danger" size="md" className="mt-3" onClick={() => setConfirming(true)}>
+              Delete item
+            </Button>
+          )}
         </div>
       </form>
     </Panel>

@@ -1,21 +1,18 @@
 import { db } from "@/lib/db";
-import type { ItemCreateBody, ItemPatchBody, ItemSummary } from "@/lib/api-types";
+import type { Category, ItemCreateBody, ItemPatchBody, ItemSummary } from "@/lib/api-types";
+import { CATEGORY_PREFIX, formatItemId } from "@/lib/api-types";
 import { audit, type Ctx } from "./context";
 import { ApiError } from "./http";
 import { listItems } from "./inventory";
 
-const ID_RE = /^[A-Z]{3}-\d{3}$/;
-
-/** Adds an item to the catalogue. Admin only. */
+/** Adds an item to the catalogue. Admin only. The ID is the category's next free number. */
 export async function createItem(ctx: Ctx, body: ItemCreateBody): Promise<ItemSummary> {
   if (ctx.user.role !== "ADMIN") throw ApiError.forbidden("Only an admin can add an item.");
 
   const name = body.name.trim();
   if (name.length < 2) throw ApiError.badRequest("Give the item a name.");
 
-  // Ids are the workbook's, so keep the shape unless one was given explicitly.
-  const id = (body.id?.trim().toUpperCase() ?? (await nextItemId())).trim();
-  if (!ID_RE.test(id)) throw ApiError.badRequest('Item IDs look like "MED-152".');
+  const id = await nextItemId(body.category);
   if (await db.item.findUnique({ where: { id } })) throw ApiError.conflict(`Item "${id}" already exists.`);
 
   await db.$transaction(async (tx) => {
@@ -80,11 +77,42 @@ export async function updateItem(ctx: Ctx, id: string, patch: ItemPatchBody): Pr
   return updated;
 }
 
-/** The next free ID in the same block as the existing ones, e.g. MED-152. */
-async function nextItemId(): Promise<string> {
-  const last = await db.item.findFirst({ orderBy: { id: "desc" }, select: { id: true } });
-  const match = /^([A-Z]+)-(\d+)$/.exec(last?.id ?? "MED-000");
-  const prefix = match ? match[1] : "MED";
-  const next = match ? Number(match[2]) + 1 : 1;
-  return `${prefix}-${String(next).padStart(3, "0")}`;
+/**
+ * Deletes an item and everything that belongs to it. Admin only.
+ *
+ * Stock is never deleted under the covers anywhere else, but a stale item has no place in the
+ * catalogue, so this removes the item, its batches and every entry against them, and its month
+ * counts, all in one transaction. The audit log keeps the name, so a deletion is never silent.
+ */
+export async function deleteItem(ctx: Ctx, id: string): Promise<void> {
+  if (ctx.user.role !== "ADMIN") throw ApiError.forbidden("Only an admin can delete an item.");
+
+  const gone = await db.item.findUnique({ where: { id }, select: { id: true, name: true, category: true } });
+  if (!gone) throw ApiError.notFound(`No item with ID "${id}".`);
+
+  await db.$transaction(async (tx) => {
+    // Children first: batches and counts hold foreign keys back to the item, and the entries
+    // hold keys to the batches, so they have to go in reverse order of the references.
+    await tx.transaction.deleteMany({ where: { itemId: id } });
+    await tx.batch.deleteMany({ where: { itemId: id } });
+    await tx.monthClosing.deleteMany({ where: { itemId: id } });
+    await tx.item.delete({ where: { id } });
+    await audit(tx, ctx, "item.delete", "item", id, { name: gone.name, category: gone.category });
+  });
+}
+
+/** The next free ID in a category's block, e.g. MED-152 for the MEDICINE category. */
+async function nextItemId(category: Category): Promise<string> {
+  const prefix = CATEGORY_PREFIX[category];
+  const re = new RegExp(`^${prefix}-(\\d+)$`);
+  let max = 0;
+  const rows = await db.item.findMany({
+    where: { id: { startsWith: `${prefix}-` } },
+    select: { id: true },
+  });
+  for (const row of rows) {
+    const m = re.exec(row.id);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return formatItemId(category, max + 1);
 }
